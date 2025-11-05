@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N8N Webhook Connectivity Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-2">🔍 N8N Webhook Connectivity Test</h1>
+        <p class="text-gray-400 mb-8">Test if your browser can reach the n8n webhook</p>
+
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Configuration</h2>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Webhook URL:</label>
+                <input 
+                    type="text" 
+                    id="webhookUrl" 
+                    value="https://nikhil27.app.n8n.cloud/webhook/gemini-webhook"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                    placeholder="https://your-n8n-instance.app.n8n.cloud/webhook/your-path"
+                />
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Gemini API Key:</label>
+                <input 
+                    type="password" 
+                    id="apiKey" 
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                    placeholder="AIzaSy..."
+                />
+                <p class="text-xs text-gray-400 mt-1">Get your key from: https://aistudio.google.com/app/apikey</p>
+            </div>
+
+            <button 
+                onclick="runTests()" 
+                class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-medium transition"
+            >
+                🚀 Run Tests
+            </button>
+        </div>
+
+        <div id="results" class="space-y-4"></div>
+    </div>
+
+    <script>
+        function addResult(title, status, message, details = '') {
+            const resultsDiv = document.getElementById('results');
+            const statusColor = status === 'success' ? 'green' : status === 'error' ? 'red' : 'yellow';
+            const statusIcon = status === 'success' ? '✅' : status === 'error' ? '❌' : '⏳';
+            
+            const resultHtml = `
+                <div class="bg-gray-800 rounded-lg p-6 border-l-4 border-${statusColor}-500">
+                    <div class="flex items-start">
+                        <span class="text-2xl mr-3">${statusIcon}</span>
+                        <div class="flex-1">
+                            <h3 class="text-lg font-semibold mb-2">${title}</h3>
+                            <p class="text-gray-300 mb-2">${message}</p>
+                            ${details ? `<pre class="bg-gray-900 p-3 rounded text-xs overflow-x-auto">${details}</pre>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            resultsDiv.insertAdjacentHTML('beforeend', resultHtml);
+        }
+
+        async function runTests() {
+            const webhookUrl = document.getElementById('webhookUrl').value;
+            const apiKey = document.getElementById('apiKey').value;
+            const resultsDiv = document.getElementById('results');
+            
+            // Clear previous results
+            resultsDiv.innerHTML = '';
+
+            if (!webhookUrl) {
+                addResult('Configuration Error', 'error', 'Please enter a webhook URL');
+                return;
+            }
+
+            if (!apiKey) {
+                addResult('Configuration Error', 'error', 'Please enter your Gemini API key');
+                return;
+            }
+
+            // Test 1: Check if n8n domain is reachable
+            addResult('Test 1: Checking n8n Domain', 'pending', 'Testing if n8n instance is reachable...');
+            
+            try {
+                const url = new URL(webhookUrl);
+                const baseUrl = `${url.protocol}//${url.host}`;
+                
+                const response = await fetch(baseUrl, { method: 'GET', mode: 'no-cors' });
+                addResult('Test 1: n8n Domain', 'success', `n8n instance at ${baseUrl} is reachable`);
+            } catch (error) {
+                addResult('Test 1: n8n Domain', 'error', `Cannot reach n8n instance`, error.message);
+                return;
+            }
+
+            // Test 2: Test webhook endpoint
+            addResult('Test 2: Testing Webhook Endpoint', 'pending', 'Sending test request to webhook...');
+            
+            try {
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        prompt: 'Test connectivity',
+                        theme: 'portfolio',
+                        geminiKey: apiKey
+                    }),
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Response data:', data);
+
+                    if (data.error) {
+                        addResult(
+                            'Test 2: Webhook Response', 
+                            'error', 
+                            `Webhook returned an error: ${data.error}`,
+                            JSON.stringify(data, null, 2)
+                        );
+                        
+                        // Provide specific guidance based on error
+                        if (data.error.includes('API_KEY_INVALID')) {
+                            addResult(
+                                '🔑 API Key Issue',
+                                'error',
+                                'Your Gemini API key is invalid or expired',
+                                'Solution:\n1. Go to https://aistudio.google.com/app/apikey\n2. Create a new API key\n3. Copy and paste it above\n4. Run tests again'
+                            );
+                        } else if (data.error.includes('RESOURCE_EXHAUSTED')) {
+                            addResult(
+                                '📊 Quota Exceeded',
+                                'error',
+                                'You\'ve hit the API quota limit',
+                                'Solution:\n1. Wait 60 seconds\n2. Try again\n3. Or upgrade your Gemini API plan'
+                            );
+                        }
+                    } else if (data.html) {
+                        addResult(
+                            'Test 2: Webhook Response', 
+                            'success', 
+                            `✅ Webhook is working! Received ${data.html.length} characters of HTML`,
+                            `Response:\n${JSON.stringify(data, null, 2).substring(0, 500)}...`
+                        );
+                        
+                        addResult(
+                            '🎉 SUCCESS!',
+                            'success',
+                            'Your n8n webhook is working correctly!',
+                            'The issue must be in your React app configuration. Make sure:\n1. Webhook URL in app matches this URL\n2. API key in app matches this API key\n3. You\'ve saved the configuration\n4. You\'ve refreshed the browser (Ctrl+Shift+R)'
+                        );
+                    } else {
+                        addResult(
+                            'Test 2: Webhook Response', 
+                            'error', 
+                            'Unexpected response format',
+                            JSON.stringify(data, null, 2)
+                        );
+                    }
+                } else {
+                    const errorText = await response.text();
+                    addResult(
+                        'Test 2: Webhook Response', 
+                        'error', 
+                        `HTTP ${response.status}: ${response.statusText}`,
+                        errorText
+                    );
+
+                    // Provide specific guidance
+                    if (response.status === 404) {
+                        addResult(
+                            '❌ Workflow Not Found',
+                            'error',
+                            'The webhook endpoint doesn\'t exist',
+                            'Solutions:\n1. Check if workflow is ACTIVE (GREEN toggle in n8n)\n2. Verify webhook path is correct\n3. Login to n8n and check the Webhook node\'s Production URL'
+                        );
+                    } else if (response.status === 500) {
+                        addResult(
+                            '❌ Workflow Error',
+                            'error',
+                            'The n8n workflow has an internal error',
+                            'Solutions:\n1. Login to n8n\n2. Go to Executions tab\n3. Find the failed execution\n4. Click on it to see which node failed\n5. Fix the workflow error'
+                        );
+                    }
+                }
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+                
+                addResult(
+                    'Test 2: Webhook Request', 
+                    'error', 
+                    'Failed to fetch: ' + error.message,
+                    error.stack
+                );
+
+                if (error.message.includes('Failed to fetch')) {
+                    addResult(
+                        '🚨 CORS or Network Issue',
+                        'error',
+                        'Your browser cannot reach the webhook',
+                        'Common causes:\n' +
+                        '1. CORS blocking (n8n doesn\'t allow requests from browser)\n' +
+                        '2. Workflow is INACTIVE\n' +
+                        '3. Network/firewall blocking\n' +
+                        '4. n8n instance is down\n\n' +
+                        'EASIEST SOLUTION:\n' +
+                        '→ Use Direct API mode instead!\n' +
+                        '→ In React app: API Setup → Enter key → DELETE webhook URL → Save\n' +
+                        '→ This bypasses n8n entirely and works 100% of the time'
+                    );
+                } else if (error.message.includes('NetworkError')) {
+                    addResult(
+                        '🌐 Network Error',
+                        'error',
+                        'Network request was blocked',
+                        'Solutions:\n1. Check if n8n instance is up\n2. Try disabling VPN\n3. Try different network\n4. Or use Direct API mode (recommended)'
+                    );
+                }
+            }
+
+            // Final recommendation
+            addResult(
+                '💡 Recommendation',
+                'success',
+                'Tired of debugging webhooks?',
+                'Use Direct API mode instead:\n\n' +
+                '1. Open your React app\n' +
+                '2. Click ⚙️ (API Setup)\n' +
+                '3. Enter your Gemini API key\n' +
+                '4. DELETE the webhook URL (leave it empty)\n' +
+                '5. Click "Save"\n' +
+                '6. Click "Generate"\n' +
+                '7. It works immediately!\n\n' +
+                'Direct API:\n' +
+                '✅ No CORS issues\n' +
+                '✅ No n8n dependency\n' +
+                '✅ Faster response\n' +
+                '✅ 100% reliability\n' +
+                '✅ Easier setup'
+            );
+        }
+    </script>
+</body>
+</html>

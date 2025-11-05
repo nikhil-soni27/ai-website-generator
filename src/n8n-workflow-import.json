@@ -1,0 +1,100 @@
+{
+  "name": "AI Website Generator - BULLETPROOF FIX",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gemini-webhook",
+        "options": {
+          "responseMode": "lastNode"
+        }
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "auto-generated"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={{ $json.geminiKey }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"systemInstruction\": {\n    \"parts\": [{\n      \"text\": \"You are an HTML file generator. You ONLY output valid HTML documents. NEVER output JSX, React components, or code with 'import' or 'export' statements. NEVER use 'className' - always use 'class'. Your response must start with <!DOCTYPE html> and end with </html>. Do not include any markdown code fences or explanations.\"\n    }]\n  },\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"ROLE: You are a raw HTML file generator. You output ONLY valid HTML documents.\\n\\n❌ FORBIDDEN - YOU MUST NOT DO THESE:\\n1. DO NOT write \\\"import React\\\" or any imports\\n2. DO NOT write \\\"export default\\\" or any exports\\n3. DO NOT use \\\"className=\\\" - this is JSX, not HTML\\n4. DO NOT use {curlyBraces} for variables - this is JSX\\n5. DO NOT wrap output in ```jsx or ```html markers\\n6. DO NOT write ANY text before <!DOCTYPE html>\\n7. DO NOT write ANY explanations after </html>\\n8. DO NOT create React components or functions\\n9. DO NOT use const/let/function at the top level\\n10. DO NOT use JSX syntax whatsoever\\n\\n✅ REQUIRED - YOU MUST DO THESE:\\n1. First 15 characters MUST be: \\\"<!DOCTYPE html>\\\"\\n2. Use \\\"class=\\\" not \\\"className=\\\"\\n3. Put JavaScript inside <script> tags, not inline JSX\\n4. Create a complete standalone HTML file\\n5. Include: <script src=\\\"https://cdn.tailwindcss.com\\\"></script>\\n6. Make it responsive with Tailwind classes\\n7. Last tag MUST be: </html>\\n\\nTASK: Create an HTML page for: {{ $json.prompt }}\\nTHEME: {{ $json.theme }}\\n\\nYOUR OUTPUT (start typing <!DOCTYPE html> immediately):\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.3,\n    \"topK\": 20,\n    \"topP\": 0.8,\n    \"maxOutputTokens\": 8192\n  }\n}",
+        "options": {}
+      },
+      "name": "Call Gemini API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// BULLETPROOF HTML Extractor with error handling\nconst items = $input.all();\n\nif (!items || items.length === 0) {\n  return [{\n    json: {\n      error: \"No data received from Gemini API\",\n      status: \"failed\"\n    }\n  }];\n}\n\nconst firstItem = items[0].json;\n\ntry {\n  // Check for Gemini API error\n  if (firstItem.error) {\n    const errorMessage = firstItem.error.message || JSON.stringify(firstItem.error);\n    return [{\n      json: {\n        error: `Gemini API error: ${errorMessage}`,\n        status: \"failed\",\n        details: firstItem.error\n      }\n    }];\n  }\n\n  // Extract text from Gemini response\n  let htmlContent = \"\";\n  \n  if (firstItem.candidates && \n      firstItem.candidates[0] && \n      firstItem.candidates[0].content && \n      firstItem.candidates[0].content.parts && \n      firstItem.candidates[0].content.parts[0] && \n      firstItem.candidates[0].content.parts[0].text) {\n    htmlContent = firstItem.candidates[0].content.parts[0].text;\n  } else {\n    return [{\n      json: {\n        error: \"Unexpected Gemini API response format\",\n        status: \"failed\",\n        response: firstItem\n      }\n    }];\n  }\n\n  // Clean markdown code blocks\n  htmlContent = htmlContent\n    .replace(/```html\\n?/gi, '')\n    .replace(/```jsx\\n?/gi, '')\n    .replace(/```javascript\\n?/gi, '')\n    .replace(/```\\n?/g, '')\n    .trim();\n\n  // Check for JSX\n  const hasImport = htmlContent.includes('import ');\n  const hasExport = htmlContent.includes('export ');\n  const hasClassName = htmlContent.includes('className=');\n  const hasJSXSyntax = (htmlContent.includes('const ') && htmlContent.includes('= () =>')) || \n                       (htmlContent.includes('function ') && htmlContent.includes('return ('));\n\n  if (hasImport || hasExport || (hasClassName && !htmlContent.includes('<!DOCTYPE')) || hasJSXSyntax) {\n    // Try to convert JSX to HTML\n    htmlContent = htmlContent\n      .replace(/^import.*$/gm, '')\n      .replace(/^export.*$/gm, '')\n      .replace(/className=/g, 'class=')\n      .trim();\n    \n    // Try to extract from return statement\n    const returnMatch = htmlContent.match(/return\\s*\\(([\\s\\S]*)\\);?\\s*}/);\n    if (returnMatch) {\n      const extracted = returnMatch[1].trim();\n      htmlContent = `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Generated Website</title>\n  <script src=\"https://cdn.tailwindcss.com\"></script>\n</head>\n<body>\n${extracted}\n</body>\n</html>`;\n    } else {\n      return [{\n        json: {\n          error: \"AI generated JSX instead of HTML. Please regenerate.\",\n          status: \"failed\",\n          hint: \"The AI ignored instructions. Try again - this happens occasionally.\"\n        }\n      }];\n    }\n  }\n\n  // Ensure DOCTYPE\n  if (!htmlContent.startsWith('<!DOCTYPE')) {\n    if (htmlContent.startsWith('<html')) {\n      htmlContent = '<!DOCTYPE html>\\n' + htmlContent;\n    }\n  }\n\n  // Extract the HTML document\n  const htmlMatch = htmlContent.match(/(<!DOCTYPE html>[\\s\\S]*?<\\/html>)/i);\n  if (htmlMatch) {\n    htmlContent = htmlMatch[1];\n  } else if (htmlContent.includes('<html')) {\n    const htmlTagMatch = htmlContent.match(/(<html[\\s\\S]*?<\\/html>)/i);\n    if (htmlTagMatch) {\n      htmlContent = '<!DOCTYPE html>\\n' + htmlTagMatch[1];\n    }\n  }\n\n  // Final validation\n  if (!htmlContent.includes('<html')) {\n    return [{\n      json: {\n        error: \"Generated content is not valid HTML (missing <html> tag)\",\n        status: \"failed\",\n        preview: htmlContent.substring(0, 500)\n      }\n    }];\n  }\n\n  if (htmlContent.length < 200) {\n    return [{\n      json: {\n        error: \"Generated HTML is too short (less than 200 characters)\",\n        status: \"failed\",\n        length: htmlContent.length\n      }\n    }];\n  }\n\n  // Success!\n  return [{\n    json: {\n      html: htmlContent,\n      success: true,\n      length: htmlContent.length,\n      model: \"gemini-1.5-flash\"\n    }\n  }];\n  \n} catch (error) {\n  return [{\n    json: {\n      error: `Processing error: ${error.message}`,\n      status: \"failed\",\n      stack: error.stack\n    }\n  }];\n}"
+      },
+      "name": "Extract HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini API": {
+      "main": [
+        [
+          {
+            "node": "Extract HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
