@@ -8,7 +8,7 @@ import { toast } from "sonner@2.0.3";
 import { Toaster } from "./components/ui/sonner";
 import { PromptInput } from "./components/PromptInput";
 import { ThemeSelector } from "./components/ThemeSelector";
-import { PreviewFrame } from "./components/PreviewFrame";
+import  {PreviewFrame}  from "./components/PreviewFrame";
 import { Header } from "./components/Header";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { ApiKeyDialog } from "./components/ApiKeyDialog";
@@ -21,18 +21,18 @@ function AppContent() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedCode, setGeneratedCode] = useState("");
   const [progress, setProgress] = useState(0);
-  const [apiDialogOpen, setApiDialogOpen] = useState(false);
+  const [apiDialogOpen, setApiDialogOpen] = useState(false); // Dialog state kept but never shown
   const [geminiKey, setGeminiKey] = useState<string>("");
   const [webhookUrl, setWebhookUrl] = useState<string>("");
   const [debugMode, setDebugMode] = useState(false);
   const [useDirectAPI, setUseDirectAPI] = useState(false);
 
-  // Load saved configuration on mount
+  // Set default API key and webhook URL
   useEffect(() => {
-    const savedGeminiKey = localStorage.getItem("geminiKey");
-    const savedWebhookUrl = localStorage.getItem("webhookUrl");
-    if (savedGeminiKey) setGeminiKey(savedGeminiKey);
-    if (savedWebhookUrl) setWebhookUrl(savedWebhookUrl);
+    setGeminiKey("AIzaSyBILHKplHQZeOldZSCUYBsySr85yxf68Pw");
+    setWebhookUrl("https://nikhil27.app.n8n.cloud/webhook/gemini-webhook");
+    localStorage.setItem("geminiKey", "AIzaSyBILHKplHQZeOldZSCUYBsySr85yxf68Pw");
+    localStorage.setItem("webhookUrl", "https://nikhil27.app.n8n.cloud/webhook/gemini-webhook");
   }, []);
 
   const handleGenerate = async () => {
@@ -335,10 +335,24 @@ ${extractedJSX}
             toast.error(`AI generation failed: ${error.message}`, { duration: 6000 });
           }
           
-          // Fallback to template generator
-          toast.info("Using template fallback...");
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          generatedHTML = generateWebsiteFromTemplate(prompt, selectedTheme);
+          // Validate if the response is already complete HTML
+          if (error.response?.data?.content?.parts?.[0]?.text) {
+            const aiGeneratedHTML = error.response.data.content.parts[0].text;
+            if (aiGeneratedHTML.includes('<!DOCTYPE html>')) {
+              generatedHTML = aiGeneratedHTML;
+              toast.success("Generated using AI response");
+            } else {
+              // Fallback to template generator
+              toast.info("Using template fallback...");
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+              generatedHTML = generateWebsiteFromTemplate(prompt, selectedTheme);
+            }
+          } else {
+            // Fallback to template generator
+            toast.info("Using template fallback...");
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            generatedHTML = generateWebsiteFromTemplate(prompt, selectedTheme);
+          }
           setProgress(100);
         }
       } else if (geminiKey && useDirectAPI) {
@@ -517,6 +531,21 @@ YOUR OUTPUT (start typing <!DOCTYPE html> immediately):`;
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${selectedTheme} Website</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+  // 🧩 Tailwind CDN fallback
+  (async () => {
+    try {
+      const res = await fetch('https://cdn.tailwindcss.com', { method: 'HEAD' });
+      if (!res.ok) throw new Error('CDN not available');
+    } catch (err) {
+      console.warn('⚠️ Tailwind CDN failed, loading fallback CSS...');
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css';
+      document.head.appendChild(link);
+    }
+  })();
+</script>
 </head>
 <body>
 ${extractedJSX}
@@ -670,14 +699,7 @@ ${extractedJSX}
                     Describe your ideal website and select a theme to get started
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setApiDialogOpen(true)}
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  API Setup
-                </Button>
+                {/* API Setup button removed as configuration is hardcoded */}
               </div>
 
               <div className="flex items-center justify-between flex-wrap gap-2">
